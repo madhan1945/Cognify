@@ -40,8 +40,11 @@ function UploadSection({ setQuiz, loading, setLoading }) {
       const formData = new FormData()
       formData.append('file', file)
       const uploadRes = await axios.post(`${API}/upload/file`, formData)
+      const fullText = uploadRes.data.full_text || uploadRes.data.preview
       const quizRes = await axios.post(`${API}/quiz/generate`, {
-        content: uploadRes.data.preview,
+        content: fullText,
+      }, {
+        headers: { 'Content-Type': 'application/json' }
       })
       setQuiz(quizRes.data)
       toast.success(`Generated ${quizRes.data.total_questions} questions!`)

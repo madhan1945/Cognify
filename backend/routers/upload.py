@@ -65,6 +65,7 @@ async def upload_file(file: UploadFile = File(...)):
                 "keywords": processed["keywords"],
                 "topics": processed["topics"],
                 "preview": processed["cleaned_text"][:500] + "...",
+                "full_text": processed["cleaned_text"],
                 "status": "processed",
             }
         )

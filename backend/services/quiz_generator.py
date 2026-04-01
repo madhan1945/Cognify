@@ -7,6 +7,8 @@ import re
 import random
 from typing import List, Dict
 import spacy
+import nltk
+from nltk.corpus import wordnet
 
 nlp = spacy.load("en_core_web_sm")
 
@@ -28,33 +30,104 @@ def get_t5_model():
 class QuizGenerator:
 
     @staticmethod
+    def get_wordnet_distractors(word: str, num: int = 3) -> List[str]:
+        """Get semantically related wrong answers using WordNet."""
+        distractors = set()
+        synsets = wordnet.synsets(word.replace(" ", "_"))
+
+        for syn in synsets:
+            # Hypernyms (broader terms)
+            for hypernym in syn.hypernyms():
+                for lemma in hypernym.lemmas():
+                    candidate = lemma.name().replace("_", " ").lower()
+                    if candidate != word.lower() and len(candidate) > 2:
+                        distractors.add(candidate)
+
+            # Hyponyms (narrower terms)
+            for hyponym in syn.hyponyms():
+                for lemma in hyponym.lemmas():
+                    candidate = lemma.name().replace("_", " ").lower()
+                    if candidate != word.lower() and len(candidate) > 2:
+                        distractors.add(candidate)
+
+            # Also siblings (same hypernym)
+            for hypernym in syn.hypernyms():
+                for hyponym in hypernym.hyponyms():
+                    for lemma in hyponym.lemmas():
+                        candidate = lemma.name().replace("_", " ").lower()
+                        if candidate != word.lower() and len(candidate) > 2:
+                            distractors.add(candidate)
+
+        distractors = list(distractors)
+        random.shuffle(distractors)
+        return distractors[:num]
+
+    @staticmethod
+    def get_distractors(keyword: str, all_keywords: List[str], num: int = 3) -> List[str]:
+        """
+        Smart distractor selection:
+        1. Try WordNet first
+        2. Fall back to keywords from the same text
+        """
+        # Try WordNet
+        wordnet_distractors = QuizGenerator.get_wordnet_distractors(keyword, num)
+        if len(wordnet_distractors) >= num:
+            return wordnet_distractors[:num]
+
+        # Fall back to keywords filtered by similar length
+        stopwords = {
+            "the", "a", "an", "is", "are", "was", "were", "in", "on",
+            "at", "to", "of", "and", "or", "that", "this", "it", "its"
+        }
+        fallback = [
+            k for k in all_keywords
+            if k.lower() != keyword.lower()
+            and k.lower() not in stopwords
+            and len(k) > 4
+            and abs(len(k) - len(keyword)) <= 8
+            and len(k.split()) <= 2  # no long phrases
+            and not any(sw in k.lower() for sw in ["the", "a ", "an ", "these", "this", "that"])
+        ]
+        random.shuffle(fallback)
+
+        # Combine WordNet + fallback
+        combined = wordnet_distractors + fallback
+        seen = set()
+        unique = []
+        for d in combined:
+            if d.lower() not in seen:
+                seen.add(d.lower())
+                unique.append(d)
+
+        return unique[:num]
+
+    @staticmethod
     def generate_mcq_rule_based(sentences: List[str], keywords: List[str]) -> List[Dict]:
-        """Generate MCQs with better distractors."""
+        """Generate MCQs with smart WordNet-based distractors."""
         questions = []
         stopwords = {
             "the", "a", "an", "is", "are", "was", "were", "in", "on",
             "at", "to", "of", "and", "or", "that", "this", "it", "its"
         }
-        clean_keywords = [k for k in keywords if k.lower() not in stopwords and len(k) > 3]
+        clean_keywords = [
+            k for k in keywords
+            if k.lower() not in stopwords and len(k) > 3
+        ]
 
         for sentence in sentences:
             for keyword in clean_keywords:
                 if keyword.lower() in sentence.lower() and len(sentence.split()) >= 8:
                     question_text = re.sub(
-                        re.escape(keyword), "______", sentence, flags=re.IGNORECASE, count=1
+                        re.escape(keyword), "______", sentence,
+                        flags=re.IGNORECASE, count=1
                     )
-                    distractors = [
-                        k for k in clean_keywords
-                        if k.lower() != keyword.lower()
-                        and abs(len(k) - len(keyword)) <= 10
-                    ]
-                    random.shuffle(distractors)
-                    distractors = distractors[:3]
+
+                    distractors = QuizGenerator.get_distractors(keyword, clean_keywords)
 
                     if len(distractors) < 3:
                         continue
 
-                    options = distractors + [keyword]
+                    options = distractors[:3] + [keyword]
                     random.shuffle(options)
 
                     questions.append({
@@ -74,7 +147,7 @@ class QuizGenerator:
 
     @staticmethod
     def generate_truefalse(sentences: List[str]) -> List[Dict]:
-        """Generate True/False questions from sentences."""
+        """Generate True/False questions."""
         questions = []
 
         for sentence in sentences:
@@ -112,13 +185,17 @@ class QuizGenerator:
             "the", "a", "an", "is", "are", "was", "were", "in", "on",
             "at", "to", "of", "and", "or", "that", "this", "it", "its"
         }
-        clean_keywords = [k for k in keywords if k.lower() not in stopwords and len(k) > 3]
+        clean_keywords = [
+            k for k in keywords
+            if k.lower() not in stopwords and len(k) > 3
+        ]
 
         for sentence in sentences:
             for keyword in clean_keywords:
                 if keyword.lower() in sentence.lower() and len(sentence.split()) >= 8:
                     blanked = re.sub(
-                        re.escape(keyword), "_____", sentence, flags=re.IGNORECASE, count=1
+                        re.escape(keyword), "_____", sentence,
+                        flags=re.IGNORECASE, count=1
                     )
                     questions.append({
                         "type": "fill_blank",
@@ -173,7 +250,7 @@ class QuizGenerator:
         """Simple negation by inserting 'not' after first verb."""
         doc = nlp(sentence)
         for token in doc:
-            if token.pos_ == "AUX" or token.pos_ == "VERB":
+            if token.pos_ in ("AUX", "VERB"):
                 return sentence.replace(token.text, token.text + " not", 1)
         return None
 
