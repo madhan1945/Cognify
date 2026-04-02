@@ -18,9 +18,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from backend.routers import upload, quiz
+from backend.routers import upload, quiz, evaluate
 app.include_router(upload.router, prefix="/api/v1", tags=["File Upload"])
 app.include_router(quiz.router, prefix="/api/v1", tags=["Quiz Generation"])
+app.include_router(evaluate.router, prefix="/api/v1", tags=["Evaluation"])
 
 
 @app.get("/")

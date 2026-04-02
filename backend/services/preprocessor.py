@@ -1,16 +1,30 @@
 """
 Text Preprocessing Pipeline
+Uses NLTK instead of spaCy to avoid Windows DLL issues.
 """
 
 import re
-import spacy
-from nltk.tokenize import sent_tokenize
+import nltk
+from nltk.tokenize import sent_tokenize, word_tokenize
+from nltk.corpus import stopwords
+from nltk.tag import pos_tag
+from nltk.chunk import ne_chunk
 from typing import List, Dict
 import logging
 
 logger = logging.getLogger(__name__)
 
-nlp = spacy.load("en_core_web_sm")
+# Download required NLTK data
+nltk.download('punkt', quiet=True)
+nltk.download('stopwords', quiet=True)
+nltk.download('averaged_perceptron_tagger', quiet=True)
+nltk.download('averaged_perceptron_tagger_eng', quiet=True)
+nltk.download('maxent_ne_chunker', quiet=True)
+nltk.download('maxent_ne_chunker_tab', quiet=True)
+nltk.download('words', quiet=True)
+nltk.download('punkt_tab', quiet=True)
+
+STOPWORDS = set(stopwords.words('english'))
 
 
 class TextPreprocessor:
@@ -37,26 +51,30 @@ class TextPreprocessor:
 
     @staticmethod
     def extract_keywords(text: str, top_n: int = 15) -> List[str]:
-        """Extract keywords using spaCy — fast, no external model needed."""
+        """Extract keywords using NLTK POS tagging."""
         try:
-            doc = nlp(text[:50000])
-            # Extract noun chunks and named entities as keywords
+            words = word_tokenize(text[:10000])
+            tagged = pos_tag(words)
+
             keywords = []
             seen = set()
 
-            # Named entities first
-            for ent in doc.ents:
-                kw = ent.text.lower().strip()
-                if kw not in seen and len(kw.split()) <= 3 and len(kw) > 2:
-                    keywords.append(kw)
-                    seen.add(kw)
+            # Extract nouns and noun phrases
+            for i, (word, tag) in enumerate(tagged):
+                if tag.startswith('NN') and word.lower() not in STOPWORDS and len(word) > 3:
+                    kw = word.lower()
+                    if kw not in seen:
+                        keywords.append(kw)
+                        seen.add(kw)
 
-            # Noun chunks
-            for chunk in doc.noun_chunks:
-                kw = chunk.text.lower().strip()
-                if kw not in seen and len(kw.split()) <= 3 and len(kw) > 2:
-                    keywords.append(kw)
-                    seen.add(kw)
+                # Bigrams (two consecutive nouns)
+                if i < len(tagged) - 1:
+                    word2, tag2 = tagged[i + 1]
+                    if tag.startswith('NN') and tag2.startswith('NN'):
+                        bigram = f"{word.lower()} {word2.lower()}"
+                        if bigram not in seen:
+                            keywords.append(bigram)
+                            seen.add(bigram)
 
             return keywords[:top_n]
         except Exception as e:
@@ -65,22 +83,28 @@ class TextPreprocessor:
 
     @staticmethod
     def detect_topics(text: str) -> List[str]:
-        doc = nlp(text[:50000])
-        entities = [ent.text for ent in doc.ents if len(ent.text.split()) <= 4]
-        noun_chunks = [
-            chunk.text.lower()
-            for chunk in doc.noun_chunks
-            if len(chunk.text.split()) >= 2
-        ]
-        all_topics = list(set(entities + noun_chunks))
-        from collections import Counter
-        topic_counts = Counter(
-            word.lower()
-            for word in all_topics
-            for topic in all_topics
-            if word.lower() in topic.lower()
-        )
-        return [topic for topic, _ in topic_counts.most_common(10)]
+        """Detect topics using NLTK named entity chunking."""
+        try:
+            sentences = sent_tokenize(text[:10000])
+            topics = []
+            seen = set()
+
+            for sentence in sentences[:20]:
+                words = word_tokenize(sentence)
+                tagged = pos_tag(words)
+                chunks = ne_chunk(tagged)
+
+                for chunk in chunks:
+                    if hasattr(chunk, 'label'):
+                        topic = ' '.join(c[0] for c in chunk).lower()
+                        if topic not in seen and len(topic) > 2:
+                            topics.append(topic)
+                            seen.add(topic)
+
+            return topics[:10]
+        except Exception as e:
+            logger.error(f"Topic detection failed: {e}")
+            return []
 
     @staticmethod
     def process(raw_text: str) -> Dict:

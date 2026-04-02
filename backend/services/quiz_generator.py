@@ -1,16 +1,21 @@
 """
 Quiz Generator Service
-Handles rule-based and transformer-based question generation.
+Uses NLTK instead of spaCy.
 """
 
 import re
 import random
 from typing import List, Dict
-import spacy
 import nltk
+from nltk.tokenize import word_tokenize
+from nltk.tag import pos_tag
 from nltk.corpus import wordnet
 
-nlp = spacy.load("en_core_web_sm")
+nltk.download('punkt', quiet=True)
+nltk.download('averaged_perceptron_tagger', quiet=True)
+nltk.download('averaged_perceptron_tagger_eng', quiet=True)
+nltk.download('wordnet', quiet=True)
+nltk.download('punkt_tab', quiet=True)
 
 _tokenizer = None
 _model = None
@@ -36,21 +41,18 @@ class QuizGenerator:
         synsets = wordnet.synsets(word.replace(" ", "_"))
 
         for syn in synsets:
-            # Hypernyms (broader terms)
             for hypernym in syn.hypernyms():
                 for lemma in hypernym.lemmas():
                     candidate = lemma.name().replace("_", " ").lower()
                     if candidate != word.lower() and len(candidate) > 2:
                         distractors.add(candidate)
 
-            # Hyponyms (narrower terms)
             for hyponym in syn.hyponyms():
                 for lemma in hyponym.lemmas():
                     candidate = lemma.name().replace("_", " ").lower()
                     if candidate != word.lower() and len(candidate) > 2:
                         distractors.add(candidate)
 
-            # Also siblings (same hypernym)
             for hypernym in syn.hypernyms():
                 for hyponym in hypernym.hyponyms():
                     for lemma in hyponym.lemmas():
@@ -64,17 +66,11 @@ class QuizGenerator:
 
     @staticmethod
     def get_distractors(keyword: str, all_keywords: List[str], num: int = 3) -> List[str]:
-        """
-        Smart distractor selection:
-        1. Try WordNet first
-        2. Fall back to keywords from the same text
-        """
-        # Try WordNet
+        """Smart distractor selection using WordNet + keyword fallback."""
         wordnet_distractors = QuizGenerator.get_wordnet_distractors(keyword, num)
         if len(wordnet_distractors) >= num:
             return wordnet_distractors[:num]
 
-        # Fall back to keywords filtered by similar length
         stopwords = {
             "the", "a", "an", "is", "are", "was", "were", "in", "on",
             "at", "to", "of", "and", "or", "that", "this", "it", "its"
@@ -85,12 +81,11 @@ class QuizGenerator:
             and k.lower() not in stopwords
             and len(k) > 4
             and abs(len(k) - len(keyword)) <= 8
-            and len(k.split()) <= 2  # no long phrases
+            and len(k.split()) <= 2
             and not any(sw in k.lower() for sw in ["the", "a ", "an ", "these", "this", "that"])
         ]
         random.shuffle(fallback)
 
-        # Combine WordNet + fallback
         combined = wordnet_distractors + fallback
         seen = set()
         unique = []
@@ -103,7 +98,7 @@ class QuizGenerator:
 
     @staticmethod
     def generate_mcq_rule_based(sentences: List[str], keywords: List[str]) -> List[Dict]:
-        """Generate MCQs with smart WordNet-based distractors."""
+        """Generate MCQs with smart distractors."""
         questions = []
         stopwords = {
             "the", "a", "an", "is", "are", "was", "were", "in", "on",
@@ -121,9 +116,7 @@ class QuizGenerator:
                         re.escape(keyword), "______", sentence,
                         flags=re.IGNORECASE, count=1
                     )
-
                     distractors = QuizGenerator.get_distractors(keyword, clean_keywords)
-
                     if len(distractors) < 3:
                         continue
 
@@ -225,14 +218,12 @@ class QuizGenerator:
             input_ids = tokenizer.encode(
                 input_text, return_tensors="pt", max_length=512, truncation=True
             )
-
             outputs = model.generate(
                 input_ids,
                 max_length=64,
                 num_beams=4,
                 early_stopping=True,
             )
-
             question = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
             questions.append({
@@ -247,11 +238,15 @@ class QuizGenerator:
 
     @staticmethod
     def negate_sentence(sentence: str) -> str:
-        """Simple negation by inserting 'not' after first verb."""
-        doc = nlp(sentence)
-        for token in doc:
-            if token.pos_ in ("AUX", "VERB"):
-                return sentence.replace(token.text, token.text + " not", 1)
+        """Simple negation using NLTK POS tagging."""
+        try:
+            words = word_tokenize(sentence)
+            tagged = pos_tag(words)
+            for i, (word, tag) in enumerate(tagged):
+                if tag.startswith('VB') or tag == 'MD':
+                    return sentence.replace(word, word + " not", 1)
+        except Exception:
+            pass
         return None
 
     @staticmethod
