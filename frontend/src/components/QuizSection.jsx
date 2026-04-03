@@ -208,12 +208,33 @@ function QuestionCard({ question, index, onAnswer }) {
 function QuizSection({ quiz }) {
   const [filter, setFilter] = useState('all')
   const [score, setScore] = useState({ correct: 0, total: 0 })
+  const [sessionSaved, setSessionSaved] = useState(false)
 
   const handleAnswer = (isCorrect) => {
     setScore(prev => ({
       correct: prev.correct + (isCorrect ? 1 : 0),
       total: prev.total + 1,
     }))
+  }
+
+  const handleSaveSession = async () => {
+    const pct = score.total > 0 ? Math.round((score.correct / score.total) * 100) : 0
+    const grade = pct >= 90 ? 'A' : pct >= 80 ? 'B' : pct >= 70 ? 'C' : pct >= 60 ? 'D' : 'F'
+    try {
+      await axios.post(`${API}/sessions/save`, {
+        quiz_id: quiz.quiz_id,
+        questions: quiz.questions,
+        answers: [],
+        score: score.correct,
+        percentage: pct,
+        grade: grade,
+        topic: 'General',
+      })
+      setSessionSaved(true)
+      alert('Session saved successfully! ✅')
+    } catch {
+      alert('Failed to save session.')
+    }
   }
 
   const filtered = filter === 'all'
@@ -279,6 +300,33 @@ function QuizSection({ quiz }) {
       {filtered.map((q, i) => (
         <QuestionCard key={i} question={q} index={i} onAnswer={handleAnswer} />
       ))}
+
+      {/* Save Session */}
+      {score.total > 0 && (
+        <div style={{
+          textAlign: 'center', marginTop: '2rem', padding: '1.5rem',
+          background: 'var(--bg-card)', border: '1px solid var(--border)',
+          borderRadius: '16px',
+        }}>
+          <h3 style={{ fontSize: '1.3rem', fontWeight: '700', marginBottom: '0.5rem' }}>
+            {score.total === quiz.questions.length ? 'Quiz Complete! 🎉' : `${score.total} of ${quiz.questions.length} answered`}
+          </h3>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
+            Score: {score.correct}/{score.total} ({percentage}%)
+          </p>
+          <button
+            onClick={handleSaveSession}
+            disabled={sessionSaved}
+            style={{
+              padding: '12px 32px', borderRadius: '10px', border: 'none',
+              background: sessionSaved ? 'var(--bg-hover)' : 'var(--accent)',
+              color: sessionSaved ? 'var(--text-muted)' : '#fff',
+              fontWeight: '600', fontSize: '1rem', cursor: sessionSaved ? 'default' : 'pointer',
+            }}>
+            {sessionSaved ? 'Session Saved ✅' : 'Save Session'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+from backend.database import connect_db, close_db
 
 load_dotenv()
 
@@ -18,10 +19,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from backend.routers import upload, quiz, evaluate
+@app.on_event("startup")
+async def startup():
+    await connect_db()
+
+@app.on_event("shutdown")
+async def shutdown():
+    await close_db()
+
+from backend.routers import upload, quiz, evaluate, sessions
 app.include_router(upload.router, prefix="/api/v1", tags=["File Upload"])
 app.include_router(quiz.router, prefix="/api/v1", tags=["Quiz Generation"])
 app.include_router(evaluate.router, prefix="/api/v1", tags=["Evaluation"])
+app.include_router(sessions.router, prefix="/api/v1", tags=["Sessions"])
 
 
 @app.get("/")
