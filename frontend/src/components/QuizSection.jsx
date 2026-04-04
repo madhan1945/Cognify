@@ -17,7 +17,7 @@ const typeLabel = {
   short_answer: 'Short Answer',
 }
 
-function QuestionCard({ question, index, onAnswer }) {
+function QuestionCard({ question, index, onAnswer, quiz_id }) {
   const [selected, setSelected] = useState(null)
   const [revealed, setRevealed] = useState(false)
   const [evaluation, setEvaluation] = useState(null)
@@ -32,6 +32,15 @@ function QuestionCard({ question, index, onAnswer }) {
         score: 0,
       })
       onAnswer && onAnswer(false)
+      try {
+        await axios.post(`${API}/adaptive/record`, {
+          session_id: quiz_id || 'anonymous',
+          question_type: question.type,
+          difficulty: question.difficulty,
+          is_correct: false,
+          topic: 'General',
+        })
+      } catch {}
       return
     }
 
@@ -44,6 +53,13 @@ function QuestionCard({ question, index, onAnswer }) {
       setEvaluation(res.data)
       setRevealed(true)
       onAnswer && onAnswer(res.data.is_correct)
+      await axios.post(`${API}/adaptive/record`, {
+        session_id: quiz_id || 'anonymous',
+        question_type: question.type,
+        difficulty: question.difficulty,
+        is_correct: res.data.is_correct,
+        topic: 'General',
+      })
     } catch {
       setRevealed(true)
       const isCorrect = selected?.toLowerCase() === question.answer?.toLowerCase()
@@ -209,6 +225,7 @@ function QuizSection({ quiz }) {
   const [filter, setFilter] = useState('all')
   const [score, setScore] = useState({ correct: 0, total: 0 })
   const [sessionSaved, setSessionSaved] = useState(false)
+  const [recommendation, setRecommendation] = useState(null)
 
   const handleAnswer = (isCorrect) => {
     setScore(prev => ({
@@ -231,7 +248,10 @@ function QuizSection({ quiz }) {
         topic: 'General',
       })
       setSessionSaved(true)
-      alert('Session saved successfully! ✅')
+
+      // Fetch recommendation after saving
+      const rec = await axios.get(`${API}/adaptive/recommend`)
+      setRecommendation(rec.data)
     } catch {
       alert('Failed to save session.')
     }
@@ -298,7 +318,7 @@ function QuizSection({ quiz }) {
 
       {/* Questions */}
       {filtered.map((q, i) => (
-        <QuestionCard key={i} question={q} index={i} onAnswer={handleAnswer} />
+        <QuestionCard key={i} question={q} index={i} onAnswer={handleAnswer} quiz_id={quiz.quiz_id} />
       ))}
 
       {/* Save Session */}
@@ -325,6 +345,35 @@ function QuizSection({ quiz }) {
             }}>
             {sessionSaved ? 'Session Saved ✅' : 'Save Session'}
           </button>
+
+          {/* Adaptive Recommendation */}
+          {recommendation && (
+            <div style={{
+              marginTop: '1.5rem', padding: '1rem',
+              background: 'var(--bg-secondary)', borderRadius: '12px',
+              border: '1px solid var(--accent)',
+            }}>
+              <p style={{ fontSize: '0.9rem', color: 'var(--accent-light)', fontWeight: '600', marginBottom: '4px' }}>
+                🧠 Adaptive Recommendation
+              </p>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                {recommendation.message}
+              </p>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                Overall accuracy: <strong style={{ color: 'var(--text-primary)' }}>{recommendation.overall_accuracy}%</strong>
+              </p>
+              {recommendation.weak_areas?.length > 0 && (
+                <div style={{ marginTop: '8px' }}>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Weak areas:</p>
+                  {recommendation.weak_areas.map((area, i) => (
+                    <p key={i} style={{ fontSize: '0.8rem', color: 'var(--danger)' }}>
+                      • {area.area} ({area.accuracy}%) — {area.suggestion}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
