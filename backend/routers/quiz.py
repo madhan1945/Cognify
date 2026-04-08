@@ -1,6 +1,6 @@
 """
 Quiz Router
-Handles quiz generation endpoints.
+Handles quiz generation endpoints with custom question counts.
 """
 
 import uuid
@@ -17,13 +17,14 @@ router = APIRouter()
 
 class TextInput(BaseModel):
     content: str
-    num_questions: Optional[int] = 10
-    question_types: Optional[list] = ["mcq", "true_false", "fill_blank", "short_answer"]
+    mcq_count: Optional[int] = 5
+    tf_count: Optional[int] = 5
+    fill_count: Optional[int] = 5
 
 
 @router.post("/quiz/generate")
 async def generate_quiz(payload: TextInput):
-    """Generate a complete quiz from input text."""
+    """Generate a complete quiz from input text with custom question counts."""
     try:
         if len(payload.content.split()) < 50:
             raise HTTPException(
@@ -32,22 +33,24 @@ async def generate_quiz(payload: TextInput):
             )
 
         processed = TextPreprocessor.process(payload.content)
-        mcqs = QuizGenerator.generate_mcq_rule_based(processed["sentences"], processed["keywords"])
-        true_false = QuizGenerator.generate_truefalse(processed["sentences"])
-        fill_blanks = QuizGenerator.generate_fill_blanks(processed["sentences"], processed["keywords"])
-        all_questions = mcqs + true_false + fill_blanks
+        quiz = QuizGenerator.generate_all(
+            processed,
+            mcq_count=payload.mcq_count,
+            tf_count=payload.tf_count,
+            fill_count=payload.fill_count,
+        )
 
         return JSONResponse(
             content={
                 "quiz_id": str(uuid.uuid4()),
                 "status": "generated",
-                "total_questions": len(all_questions),
+                "total_questions": quiz["total_questions"],
                 "breakdown": {
-                    "mcq": len(mcqs),
-                    "true_false": len(true_false),
-                    "fill_blank": len(fill_blanks),
+                    "mcq": quiz["mcq_count"],
+                    "true_false": quiz["true_false_count"],
+                    "fill_blank": quiz["fill_blank_count"],
                 },
-                "questions": all_questions,
+                "questions": quiz["questions"],
             }
         )
 
@@ -70,16 +73,13 @@ async def sample_quiz():
     """
 
     processed = TextPreprocessor.process(sample_text)
-    mcqs = QuizGenerator.generate_mcq_rule_based(processed["sentences"], processed["keywords"])
-    true_false = QuizGenerator.generate_truefalse(processed["sentences"])
-    fill_blanks = QuizGenerator.generate_fill_blanks(processed["sentences"], processed["keywords"])
-    all_questions = mcqs + true_false + fill_blanks
+    quiz = QuizGenerator.generate_all(processed, mcq_count=3, tf_count=3, fill_count=3)
 
     return JSONResponse(
         content={
             "quiz_id": str(uuid.uuid4()),
             "status": "generated",
-            "total_questions": len(all_questions),
-            "questions": all_questions,
+            "total_questions": quiz["total_questions"],
+            "questions": quiz["questions"],
         }
     )
