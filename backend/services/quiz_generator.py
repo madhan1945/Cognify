@@ -254,19 +254,14 @@ class QuizGenerator:
 
     @staticmethod
     def generate_all(processed_data: Dict, mcq_count: int = 5,
-                     tf_count: int = 5, fill_count: int = 5) -> Dict:
+                    tf_count: int = 5, fill_count: int = 5) -> Dict:
         sentences = processed_data.get("sentences", [])
         keywords = processed_data.get("keywords", [])
 
-        random.shuffle(sentences)
-        third = max(1, len(sentences) // 3)
-        mcq_sentences = sentences[:third]
-        tf_sentences = sentences[third:third * 2]
-        fill_sentences = sentences[third * 2:]
-
-        mcqs = QuizGenerator.generate_mcq_rule_based(mcq_sentences, keywords, mcq_count)
-        true_false = QuizGenerator.generate_truefalse(tf_sentences, tf_count)
-        fill_blanks = QuizGenerator.generate_fill_blanks(fill_sentences, keywords, fill_count)
+        # All types use all sentences — no splitting
+        mcqs = QuizGenerator.generate_mcq_rule_based(sentences, keywords, mcq_count)
+        true_false = QuizGenerator.generate_truefalse(sentences, tf_count)
+        fill_blanks = QuizGenerator.generate_fill_blanks(sentences, keywords, fill_count)
 
         all_questions = mcqs + true_false + fill_blanks
         random.shuffle(all_questions)
